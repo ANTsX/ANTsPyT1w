@@ -3447,8 +3447,8 @@ def super_resolution_segmentation_per_label(
                     else:
                         if verbose:
                             print("poly match intensity")
-                        imgsr = antspynet.regression_match_image( imgsr, ants.resample_image_to_target(imgup,imgsr), poly_order=poly_order )
-                        imgsrh = antspynet.regression_match_image( imgsrh, ants.resample_image_to_target(imgchCore,imgsr), poly_order=poly_order )
+                        imgsr = ants.regression_match_image( imgsr, ants.resample_image_to_target(imgup,imgsr), poly_order=poly_order )
+                        imgsrh = ants.regression_match_image( imgsrh, ants.resample_image_to_target(imgchCore,imgsr), poly_order=poly_order )
                 problist.append( imgsrh )
                 contribtoavg = ants.resample_image_to_target( imgsr*0+1, imgup, interp_type='nearestNeighbor' )
                 weightedavg = weightedavg + contribtoavg
@@ -3569,7 +3569,7 @@ def super_resolution_segmentation_with_probabilities(
             ants.set_spacing( imgsr,  newspc )
             if verbose:
                 print(imgsr)
-            imgsr = antspynet.regression_match_image( imgsr, ants.resample_image_to_target(imgc,imgsr) )
+            imgsr = ants.regression_match_image( imgsr, ants.resample_image_to_target(imgc,imgsr) )
             imgsrh = ants.from_numpy( tf.squeeze( pred[1] ).numpy())
             imgsrh = ants.copy_image_info( imgsr, imgsrh )
             tempup = ants.resample_image_to_target( tempm, imgsr )
