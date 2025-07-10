@@ -2091,7 +2091,6 @@ def deep_nbm( t1,
         returndef = deform,
         reflect = reflect )
 
-
     def map_back( relo, t1, imgprepro, interpolator='linear', deform = False ):
         if not deform:
             relo = ants.apply_transforms( t1, relo,
@@ -2105,6 +2104,9 @@ def deep_nbm( t1,
 
     ####################################################
     physspaceBF = imgprepro['imgc']
+    if verbose:
+        print( "Mean preprocessed cropped image in nbm seg " + str(physspaceBF.mean() ) )
+
     tfarr1 = tf.cast( physspaceBF.numpy() ,'float32' )
     newshapeBF = list( tfarr1.shape )
     newshapeBF.insert(0,1)
@@ -2119,20 +2121,20 @@ def deep_nbm( t1,
     bint = ants.threshold_image( snpred1_image, 0.5, 1.0 )
     probability_images = []
     for jj in range(number_of_outputs-1):
-                temp = ants.from_numpy( segpred[0,:,:,:,jj+1] )
-                temp = ants.copy_image_info( physspaceBF, temp )
-                temp = map_back( temp, t1, imgprepro, 'linear', deform )
-                probability_images.append( temp )
+        temp = ants.from_numpy( segpred[0,:,:,:,jj+1] )
+        temp = ants.copy_image_info( physspaceBF, temp )
+        temp = map_back( temp, t1, imgprepro, 'linear', deform )
+        probability_images.append( temp )
     image_matrix = ants.image_list_to_matrix(probability_images, bint)
     segmentation_matrix = (np.argmax(image_matrix, axis=0) + 1)
     segmentation_image = ants.matrix_to_images(np.expand_dims(segmentation_matrix, axis=0), bint)[0]
     relabeled_image = ants.image_clone(segmentation_image)
     if not reflect:
         for i in range(1,len(group_labels)):
-                    relabeled_image[segmentation_image==(i)] = group_labels[i]
+            relabeled_image[segmentation_image==(i)] = group_labels[i]
     else:
         for i in range(1,len(group_labels)):
-                    relabeled_image[segmentation_image==(i)] = reflection_labels[i]
+            relabeled_image[segmentation_image==(i)] = reflection_labels[i]
 
     bfsegdesc = map_segmentation_to_dataframe( 'nbm3CH13', relabeled_image )
 
@@ -2740,7 +2742,7 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
     #    filename = bxt_png )
 
     if verbose:
-        print("hemi")
+        print("hemi -- mean of input image : " + str(img.mean()))
 
     # assuming data is reasonable quality, we should proceed with the rest ...
     mylr = label_hemispheres( img, templatea, templatealr )
@@ -2775,13 +2777,14 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
 
     myicv = icv( x )
 
-    if verbose:
-        print("NBM")
-    ##### deep_nbm basal forebrain parcellation
     braintissuemask =  ants.threshold_image( myparc['tissue_segmentation'], 2, 6 )
+    if verbose:
+        print( myicv )
+        print("NBM : mean of input image " + str( (img * braintissuemask).mean() ) )
+    ##### deep_nbm basal forebrain parcellation
     deep_bf = deep_nbm( img * braintissuemask,
         get_data("deep_nbm_rank",target_extension='.h5'),
-        csfquantile=None, aged_template=True )
+        csfquantile=None, aged_template=True, verbose=verbose )
 
     if is_test:
         mydataframes = {

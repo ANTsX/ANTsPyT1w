@@ -1,8 +1,8 @@
 import sys, os
 import unittest
-os.environ["TF_NUM_INTEROP_THREADS"] = "8"
-os.environ["TF_NUM_INTRAOP_THREADS"] = "8"
-os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "8"
+os.environ["TF_NUM_INTEROP_THREADS"] = "6"
+os.environ["TF_NUM_INTRAOP_THREADS"] = "6"
+os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "6"
 import tempfile
 import shutil
 import antspyt1w
@@ -51,7 +51,7 @@ else:
             print("dbf")
             deep_bf = antspyt1w.deep_nbm( img * braintissuemask,
                 antspyt1w.get_data("deep_nbm_rank",target_extension='.h5'),
-                csfquantile=None, aged_template=True )
+                csfquantile=None, aged_template=True, verbose=True )
             return deep_bf
     def test_deepcit():
         with tempfile.TemporaryDirectory() as temp_dir:
