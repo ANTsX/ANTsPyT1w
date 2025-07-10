@@ -1,8 +1,8 @@
 import sys, os
 import unittest
-os.environ["TF_NUM_INTEROP_THREADS"] = "8"
-os.environ["TF_NUM_INTRAOP_THREADS"] = "8"
-os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "8"
+os.environ["TF_NUM_INTEROP_THREADS"] = "48"
+os.environ["TF_NUM_INTRAOP_THREADS"] = "48"
+os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "48"
 import tempfile
 import shutil
 import antspyt1w
@@ -69,6 +69,7 @@ else:
             tempfn=temp_dir+'/apt1wtest'
             testhier = antspyt1w.hierarchical( img, output_prefix=tempfn, labels_to_register=None, imgbxt=None, cit168=False, is_test=True, verbose=True)
             mmdfw = antspyt1w.merge_hierarchical_csvs_to_wide_format( testhier['dataframes'] )
+            print( mmdfw )
             return testhier
             # assert math.fabs(testhier['brain_image']['resnetGrade']-1.56) < 0.1
 
