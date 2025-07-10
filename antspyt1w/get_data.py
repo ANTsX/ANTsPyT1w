@@ -2685,7 +2685,8 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
         img = ants.iMath( x, "Normalize" )
 
     if verbose:
-        print("QC")
+        print("QC -- mean of img : "+str(img.mean()))
+        print(".  -- mean of bxt : "+str(imgbxt.mean()))
 
     # this is an unbiased method for identifying predictors that can be used to
     # rank / sort data into clusters, some of which may be associated
