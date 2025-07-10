@@ -2694,13 +2694,14 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
     myqc = inspect_raw_t1( img, output_prefix=output_prefix, option='brain' )
 
     if verbose:
-        print("intensity")
+        print("qc results")
+        print( myqc )
 
     ##### intensity modifications
     img = ants.iMath( img, "Normalize" )
 
     if verbose:
-        print("parcellation")
+        print("parcellation -- mean of img " + str(img.mean()))
 
     ##### hierarchical labeling
     myparc = deep_brain_parcellation( x, templateb,
@@ -2720,7 +2721,9 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
     cit168labStem = ants.image_read( cit168labStem )
 
     if verbose:
-        print("cit168")
+        print("cit168-- mean of input image : " + str(img.mean()))
+        print("cit168-- mean of input imgbxt : " + str(imgbxt.mean()))
+        print(".     -- mean of input segmentation : " + str(myparc['tissue_segmentation'].mean()))
 
     cit168reg = region_reg(
             input_image = img,
@@ -2773,7 +2776,7 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
 #        templateawmprior )
 
     if verbose:
-        print("registration")
+        print("icv")
 
     myicv = icv( x )
 
