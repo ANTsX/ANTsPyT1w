@@ -2599,8 +2599,8 @@ def preprocess_intensity( x, brain_extraction,
     print( "PP input : " + str( img.mean() ) )
     img = ants.iMath( img, "TruncateIntensity", intensity_truncation_quantiles[0], intensity_truncation_quantiles[1] ).iMath( "Normalize" )
     print( "PP Trunc : " + str( img.mean() ) )
-    img = ants.denoise_image( img, brain_extraction, noise_model='Gaussian')
-    print( "PP DNZ : " + str( img.mean() ) )
+    # img = ants.denoise_image( img, brain_extraction, noise_model='Gaussian')
+    # print( "PP DNZ : " + str( img.mean() ) )
     img = ants.n4_bias_field_correction( img, mask=brain_extraction, rescale_intensities=rescale_intensities, ).iMath("Normalize")
     print( "PP N4 : " + str( img.mean() ) )
     return img
