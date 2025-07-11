@@ -1048,7 +1048,7 @@ def deep_tissue_segmentation( x, template=None, registration_map=None,
 
     """
 
-    dapper = antspynet.deep_atropos( x )
+    dapper = antspynet.deep_atropos( x, do_denoising=False )
 
     myk='segmentation_image'
     if atropos_prior is not None:
@@ -1251,7 +1251,7 @@ def deep_hippo(
 
 
 def dap( x ):
-    return( antspynet.deep_atropos( x, do_preprocessing=True )['segmentation_image'] )
+    return( antspynet.deep_atropos( x, do_preprocessing=True, do_denoising=False )['segmentation_image'] )
 
 def label_and_img_to_sr( img, label_img, sr_model, return_intensity=False, target_range=[1,0] ):
     """
