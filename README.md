@@ -18,6 +18,8 @@ python setup.py install
 
 or install via `pip install antspyt1w`
 
+Function-specific documentation is [here](https://antsx.github.io/ANTsPyT1w/antspyt1w/get_data.html).
+
 # what this will do
 
 - provide example data
@@ -113,5 +115,13 @@ rm -r -f build/ antspyt1w.egg-info/ dist/
 python3 -m  build .
 python3 -m pip install --upgrade twine
 python3 -m twine upload --repository antspyt1w dist/*
+```
+
+## to publish docs
+
+```bash
+pdoc siq -o docs
+git add docs/ && git commit -m "DOC: update docs" && git push
+# Settings → Pages → Source = main, Folder = /docs
 ```
 
