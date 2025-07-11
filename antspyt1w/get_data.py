@@ -1143,7 +1143,8 @@ def deep_brain_parcellation(
         target_image,
         do_preprocessing=True,
         return_probability_images=False,
-        do_lobar_parcellation = True
+        do_lobar_parcellation = True,
+        do_denoising=False
     )
 
     myhemiL = ants.threshold_image( dkt['lobar_parcellation'], 1, 6 )
