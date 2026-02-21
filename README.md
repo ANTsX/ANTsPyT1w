@@ -120,7 +120,7 @@ python3 -m twine upload --repository antspyt1w dist/*
 ## to publish docs
 
 ```bash
-pdoc siq -o docs
+pdoc antspyt1w -o docs
 git add docs/ && git commit -m "DOC: update docs" && git push
 # Settings → Pages → Source = main, Folder = /docs
 ```
