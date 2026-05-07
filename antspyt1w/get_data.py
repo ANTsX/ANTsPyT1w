@@ -2,7 +2,8 @@
 Get local ANTsPyT1w data
 """
 
-__all__ = ['get_data','map_segmentation_to_dataframe','hierarchical',
+__all__ = ['get_data', 'get_backend', 'set_backend', 'set_global_scientific_computing_random_seed',
+    'get_global_scientific_computing_random_seed', 'ap_segmentation_to_dataframe','hierarchical',
     'random_basis_projection', 'deep_dkt','deep_hippo','deep_tissue_segmentation',
     'deep_brain_parcellation', 'deep_mtl', 'label_hemispheres','brain_extraction',
     'hemi_reg', 'region_reg', 't1_hypointensity', 'zoom_syn', 'merge_hierarchical_csvs_to_wide_format',
@@ -30,9 +31,40 @@ from PIL import Image
 import scipy.stats as ss
 import warnings
 import ants
-import antspynet
 import tensorflow as tf
 from multiprocessing import Pool
+
+try:
+    import antspynet
+except ImportError:
+    antspynet = None
+
+try:
+    import antstorch
+except ImportError:
+    antstorch = None
+
+_GLOBAL_BACKEND = None
+
+if antspynet is not None:
+    _GLOBAL_BACKEND = 'antspynet'
+elif antstorch is not None:
+    _GLOBAL_BACKEND = 'antstorch'
+
+def set_backend(backend_name: str):
+    global _GLOBAL_BACKEND
+    if backend_name not in ['antspynet', 'antstorch']:
+        raise ValueError("The backend should be 'antspynet' or 'antstorch'.")
+    
+    if backend_name == 'antspynet' and antspynet is None:
+        raise ImportError("antspynet is not installed.")
+    if backend_name == 'antstorch' and antstorch is None:
+        raise ImportError("antstorch is not installed.")
+        
+    _GLOBAL_BACKEND = backend_name
+
+def get_backend():
+    return _GLOBAL_BACKEND
 
 DATA_PATH = os.path.expanduser('~/.antspyt1w/')
 # Internal global variable to hold the seed
@@ -581,13 +613,20 @@ def resnet_grader( x, weights_filename = None ):
         print("resnet_grader weights do not exist: " + weights_filename )
         return None
 
-    mdl = antspynet.create_resnet_model_3d( [None,None,None,1],
-        lowest_resolution = 32,
-        number_of_outputs = 4,
-        cardinality = 1,
-        squeeze_and_excite = False )
-    mdl.load_weights( weights_filename )
-
+    if get_backend() == 'antspynet':
+        mdl_antspynet = antspynet.create_resnet_model_3d( [None,None,None,1],
+            lowest_resolution = 32,
+            number_of_outputs = 4,
+            cardinality = 1,
+            squeeze_and_excite = False )
+        mdl_antspynet.load_weights( weights_filename )
+    else:
+        mdl_antstorch = antstorch.create_resnet_model_3d( [None,None,None,1],
+            lowest_resolution = 32,
+            number_of_outputs = 4,
+            cardinality = 1,
+            squeeze_and_excite = False )
+        raise ValueError("antstorch backend not yet implemented for resnet grader")
 
     t1 = ants.iMath( x - x.min(),  "Normalize" )
     bxt = ants.threshold_image( t1, 0.01, 1.0 )
@@ -636,7 +675,7 @@ def resnet_grader( x, weights_filename = None ):
             newshape = list( xarr.shape )
             newshape = [1] + newshape + [1]
             xarr = np.reshape(  xarr, newshape  )
-            preds = mdl.predict( xarr )
+            preds = mdl_antspynet.predict( xarr )
             predsnum = tf.matmul(  preds, scoreNums )
             locgrades = get_grade( predsnum, preds )
             gradelistNum.append( locgrades[0] )
@@ -702,7 +741,10 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
     # whole head outlierness
     rbp=None
     if option == 'both' or option == 'head':
-        bfn = antspynet.get_antsxnet_data( "S_template3" )
+        if get_backend() == 'antspynet':
+            bfn = antspynet.get_antsxnet_data( "S_template3" )
+        else:
+            bfn = antstorch.get_antstorch_data( "S_template3" )
         templateb = ants.image_read( bfn ).iMath("Normalize")
         templatesmall = ants.resample_image( templateb, (2,2,2), use_voxels=False )
         lomask = ants.threshold_image( x, "Otsu", 2 ).threshold_image(1,2)
@@ -730,7 +772,10 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
     if option == 'both' or option == 'brain':
         if option == 'both':
             t1 = ants.iMath( x, "TruncateIntensity",0.001, 0.999).iMath("Normalize")
-            lomask = antspynet.brain_extraction( t1, "t1" )
+            if get_backend() == 'antspynet':
+                lomask = antspynet.brain_extraction( t1, "t1" )
+            else:
+                lomask = antstorch.brain_extraction( t1, "t1" )
             t1 = ants.rank_intensity( t1 * lomask, get_mask=True )
         else:
             t1 = ants.iMath( x, "Normalize" )
@@ -786,7 +831,10 @@ def icv( x ):
     ICV in cubic millimeters
 
     """
-    icvseg = antspynet.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,2)
+    if get_backend() == 'antspynet':
+        icvseg = antspynet.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,2)
+    else:
+        icvseg = antstorch.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,2)
     np.product = np.prod( ants.get_spacing( x ) ) * icvseg.sum()
     return pd.DataFrame({'icv': [np.product]})
 
@@ -805,82 +853,13 @@ def brain_extraction( x, dilation = 8.0, method = 'v1', deform=True, verbose=Fal
     verbose: boolean
 
     """
-    return antspynet.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,1)
+    brain_mask = None
+    if get_backend() == 'antspynet':
+        brain_mask = antspynet.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,1)
+    else:  
+        brain_mask = antstorch.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,1) 
 
-    if deform:
-        reorient_template_file_name_path = antspynet. get_antsxnet_data("S_template3" )
-        template = ants.image_read( reorient_template_file_name_path )
-        reg = ants.registration( template, x, 'antsRegistrationSyNQuickRepro[s]', 
-             total_sigma=0.5 )
-
-    closedilmm = 5.0
-    spacing = ants.get_spacing(x)
-    spacing_product = spacing[0] * spacing[1] * spacing[2]
-    spcmin = min( spacing )
-    dilationRound = int(np.round( dilation / spcmin ))
-    closedilRound = int(np.round( closedilmm / spcmin ))
-    if deform:
-        xn3 = ants.n3_bias_field_correction( reg['warpedmovout'], 8 ).n3_bias_field_correction( 4 )
-        xn3 = ants.iMath(xn3, "TruncateIntensity",0.001,0.999).iMath("Normalize")
-    else:
-        xn3 = ants.n3_bias_field_correction( x, 8 ).n3_bias_field_correction( 4 )
-        xn3 = ants.iMath(xn3, "TruncateIntensity",0.001,0.999).iMath("Normalize")
-    if method == 'v0':
-        if verbose:
-            print("method v0")
-        bxtmethod = 't1combined[' + str(closedilRound) +']' # better for individual subjects
-        bxt = antspynet.brain_extraction( xn3, bxtmethod ).threshold_image(2,3).iMath("GetLargestComponent",50).iMath("FillHoles")
-        if deform:
-            bxt = ants.apply_transforms( x, bxt, reg['invtransforms'], interpolator='nearestNeighbor' )
-        return bxt
-    if method == 'v1':
-        if verbose:
-            print("method v1")
-        bxt = antspynet.brain_extraction( xn3, 't1' ).threshold_image(0.5,3).iMath("GetLargestComponent",50).iMath("FillHoles")
-        if deform:
-            bxt = ants.apply_transforms( x, bxt, reg['invtransforms'], interpolator='nearestNeighbor' )
-        return bxt
-    if verbose:
-        print("method candidate")
-    bxt0 = antspynet.brain_extraction( xn3, "t1" ).threshold_image(0.5,1.0).iMath("GetLargestComponent",50).morphology( "close", closedilRound ).iMath("FillHoles")
-    bxt0dil = ants.iMath( bxt0, "MD", dilationRound )
-    image = ants.iMath( xn3 * bxt0dil,"Normalize")*255
-    # no no brainer
-    model = antspynet.create_nobrainer_unet_model_3d((None, None, None, 1))
-    weights_file_name = antspynet.get_pretrained_network("brainExtractionNoBrainer")
-    model.load_weights(weights_file_name)
-    image_array = image.numpy()
-    image_robust_range = np.quantile(image_array[np.where(image_array != 0)], (0.02, 0.98))
-    threshold_value = 0.10 * (image_robust_range[1] - image_robust_range[0]) + image_robust_range[0]
-    thresholded_mask = ants.threshold_image(image, -10000, threshold_value, 0, 1)
-    thresholded_image = image * thresholded_mask
-    image_resampled = ants.resample_image(thresholded_image, (256, 256, 256), use_voxels=True)
-    image_array = np.expand_dims(image_resampled.numpy(), axis=0)
-    image_array = np.expand_dims(image_array, axis=-1)
-    brain_mask_array = np.squeeze(model.predict(image_array))
-    brain_mask_resampled = ants.copy_image_info(image_resampled, ants.from_numpy(brain_mask_array))
-    brain_mask_image = ants.resample_image(brain_mask_resampled, image.shape, use_voxels=True, interp_type=1)
-    brain_mask_image = brain_mask_image * ants.threshold_image( brain_mask_image, 0.5, 1e9 )
-    minimum_brain_volume = round(649933.7/spacing_product)
-    bxt1 = ants.label_clusters(brain_mask_image, minimum_brain_volume)
-    nblabels = np.unique( bxt1.numpy() )# .astype(int)
-    maxol = 0.0
-    bestlab = bxt0
-
-    for j in range(1,len(nblabels)):
-        temp = ants.threshold_image( bxt1, j, j )
-        tempsum = ( bxt0 * temp ).sum()
-        dicer = ants.label_overlap_measures( temp, bxt0 )
-        if  tempsum > maxol and dicer['MeanOverlap'][1] > 0.5 :
-            if verbose:
-                print( str(j) + ' dice ' + str( dicer['MeanOverlap'][1] ) )
-            maxol = tempsum
-            bestlab = temp
-    adder = trim_segmentation_by_distance( bxt0, 1, closedilmm )
-    bestlab = ants.threshold_image( bestlab + adder, 1, 2 )
-    return bestlab
-
-
+    return brain_mask
 
 def subdivide_labels( x, verbose = False ):
     """
@@ -1009,10 +988,11 @@ def label_hemispheres( x, template=None, templateLR=None, reg_iterations=[200,50
         tfn = get_data('T_template0', target_extension='.nii.gz' )
         tfnw = get_data('T_template0_WMP', target_extension='.nii.gz' )
         tlrfn = get_data('T_template0_LR', target_extension='.nii.gz' )
-        bfn = antspynet.get_antsxnet_data( "croppedMni152" )
         template = ants.image_read( tfn )
-        template = ( template * antspynet.brain_extraction( template, 't1' ) ).iMath( "Normalize" )
-        templateawmprior = ants.image_read( tfnw )
+        if get_backend() == 'antspynet':
+            template = (template * antspynet.brain_extraction(template, 't1')).iMath( "Normalize" )
+        else:
+            template = (template * antstorch.brain_extraction(template, 't1')).iMath( "Normalize" )
         templateLR = ants.image_read( tlrfn )
 
     reg = ants.registration(
@@ -1048,7 +1028,10 @@ def deep_tissue_segmentation( x, template=None, registration_map=None,
 
     """
 
-    dapper = antspynet.deep_atropos( x, do_denoising=False )
+    if get_backend() == 'antspynet':
+        dapper = antspynet.deep_atropos( x, do_denoising=False )
+    else:
+        dapper = antstorch.deep_atropos( x, do_denoising=False )    
 
     myk='segmentation_image'
     if atropos_prior is not None:
@@ -1138,14 +1121,19 @@ def deep_brain_parcellation(
     if verbose:
         print("Begin DKT")
 
-    dktprepro = True
-    dkt = antspynet.desikan_killiany_tourville_labeling(
-        target_image,
-        do_preprocessing=True,
-        return_probability_images=False,
-        do_lobar_parcellation = True,
-        do_denoising=False
-    )
+    if get_backend() == 'antspynet':
+        dkt = antspynet.desikan_killiany_tourville_labeling(
+            target_image,
+            do_preprocessing=True,
+            return_probability_images=False,
+            do_lobar_parcellation = True,
+            do_denoising=False)
+    else:
+        dkt = antstorch.desikan_killiany_tourville_labeling(
+            target_image,
+            do_preprocessing=True,
+            return_probability_images=False,
+            do_lobar_parcellation = True)
 
     myhemiL = ants.threshold_image( dkt['lobar_parcellation'], 1, 6 )
     myhemiR = ants.threshold_image( dkt['lobar_parcellation'], 7, 12 )
@@ -1203,7 +1191,11 @@ def deep_hippo(
         rigi = ants.apply_transforms( template, img, rig['fwdtransforms'] )
         if verbose:
             print( "done with warp - do hippmapp3r" )
-        hipp = antspynet.hippmapp3r_segmentation( rigi, do_preprocessing=False )
+        if get_backend() == 'antspynet':     
+            hipp = antspynet.hippmapp3r_segmentation( rigi, do_preprocessing=False )
+        else:
+            raise ValueError("deep_hippo does not currently support antstorch backend")
+            # hipp = antstorch.hippmapp3r_segmentation( rigi, do_preprocessing=False )    
         if verbose:
             print( "done with hippmapp3r - backtransform" )
 
@@ -1252,7 +1244,11 @@ def deep_hippo(
 
 
 def dap( x ):
-    return( antspynet.deep_atropos( x, do_preprocessing=True, do_denoising=False )['segmentation_image'] )
+    if get_backend() == 'antspynet': 
+        da_seg = antspynet.deep_atropos( x, do_preprocessing=True, do_denoising=False )['segmentation_image']
+    else:
+        da_seg = antstorch.deep_atropos( x, do_preprocessing=True )['segmentation_image']    
+    return da_seg
 
 def label_and_img_to_sr( img, label_img, sr_model, return_intensity=False, target_range=[1,0] ):
     """
@@ -1428,18 +1424,28 @@ def deep_mtl(t1, sr_model=None, verbose=True):
                           'left subiculum',
                           'right subiculum'
                           ]
+    if get_backend() == 'antspynet': 
+        template_fn = antspynet.get_antsxnet_data("deepFlashTemplateT1SkullStripped")
+    else:
+        template_fn = antstorch.get_antstorch_data("deepFlashTemplateT1SkullStripped")    
+    template = ants.image_read(template_fn)
 
-    template = ants.image_read(antspynet.get_antsxnet_data("deepFlashTemplateT1SkullStripped"))
     registration = ants.registration(fixed=template, moving=t1,
         type_of_transform="antsRegistrationSyNQuickRepro[a]", total_sigma=0.5, verbose=verbose)
     template_transforms = dict(fwdtransforms=registration['fwdtransforms'],
                                invtransforms=registration['invtransforms'])
     t1_warped = registration['warpedmovout']
 
-    df = antspynet.deep_flash(t1_warped, 
-        do_preprocessing=False,
-        use_rank_intensity = True,
-        verbose=verbose)
+    if get_backend() == 'antspynet':
+        df = antspynet.deep_flash(t1_warped, 
+            do_preprocessing=False,
+            use_rank_intensity = True,
+            verbose=verbose)
+    else:
+        df = antstorch.deep_flash(t1_warped, 
+            do_preprocessing=False,
+            use_rank_intensity = True,
+            verbose=verbose)    
 
     if False:
         if sr_model is not None:
@@ -1888,26 +1894,41 @@ def t1_hypointensity( x, xsegmentation, xWMProbability, template, templateWMPrio
     myfeatures = myfeatures.reshape( newshape )
 
     inshape = [None,None,None,4]
-    wmhunet = antspynet.create_unet_model_3d( inshape,
-        number_of_outputs = 1,
-        number_of_layers = 4,
-        mode = 'sigmoid' )
 
-    wmhunet.load_weights( get_data("simwmhseg", target_extension='.h5') )
+    if get_backend() == 'antspynet': 
+        wmhunet = antspynet.create_unet_model_3d( inshape,
+            number_of_outputs = 1,
+            number_of_layers = 4,
+            mode = 'sigmoid' )
+        wmhunet.load_weights( get_data("simwmhseg", target_extension='.h5') )
+        pp = wmhunet.predict( myfeatures )
+    else:     
+        wmhunet = antstorch.create_unet_model_3d( inshape,
+            number_of_outputs = 1,
+            number_of_layers = 4,
+            mode = 'sigmoid' )
+        raise NotImplementedError("Need to retrain the model with antstorch and update the data loading code accordingly.")
 
-    pp = wmhunet.predict( myfeatures )
-
-    limg = ants.from_numpy( tf.squeeze( pp[0] ).numpy( ) )
+    limg = ants.from_numpy( np.squeeze( pp[0] ).numpy( ) )
     limg = ants.copy_image_info( templatesmall, limg )
     lesresam = ants.apply_transforms( x, limg, afftx, whichtoinvert=[False] )
     # lesresam = lesresam * cerebrum
-    rnmdl = antspynet.create_resnet_model_3d( inshape,
-      number_of_outputs = 1,
-      layers = (1,2,3),
-      residual_block_schedule = (3,4,6,3), squeeze_and_excite = True,
-      lowest_resolution = 32, cardinality = 1, mode = "regression" )
-    rnmdl.load_weights( get_data("simwmdisc", target_extension='.h5' ) )
-    qq = rnmdl.predict( myfeatures )
+
+    if get_backend() == 'antspynet':
+        rnmdl = antspynet.create_resnet_model_3d( inshape,
+          number_of_outputs = 1,
+          layers = (1,2,3),
+          residual_block_schedule = (3,4,6,3), squeeze_and_excite = True,
+          lowest_resolution = 32, cardinality = 1, mode = "regression" )
+        rnmdl.load_weights( get_data("simwmdisc", target_extension='.h5' ) )
+        qq = rnmdl.predict( myfeatures )
+    else:
+        rnmdl = antstorch.create_resnet_model_3d( inshape,
+          number_of_outputs = 1,
+          layers = (1,2,3),
+          residual_block_schedule = (3,4,6,3), squeeze_and_excite = True,
+          lowest_resolution = 32, cardinality = 1, mode = "regression" )
+        raise NotImplementedError("Need to retrain the model with antstorch and update the data loading code accordingly.")     
 
     lesresamb = ants.threshold_image( lesresam, wmh_thresh, 1.0 )
     lgo=ants.label_geometry_measures( lesresamb, lesresam )
@@ -2046,46 +2067,62 @@ def deep_nbm( t1,
     number_of_outputs = len(group_labels)
     number_of_channels = 1
     ################################################
-    unet0 = antspynet.create_unet_model_3d(
-         [ None, None, None, number_of_channels ],
-         number_of_outputs = 1, # number of landmarks must be known
-         number_of_layers = 4, # should optimize this wrt criterion
-         number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
-         convolution_kernel_size = 3, # maybe should optimize this wrt criterion
-         deconvolution_kernel_size = 2,
-         pool_size = 2,
-         strides = 2,
-         dropout_rate = 0.0,
-         weight_decay = 0,
-         additional_options = "nnUnetActivationStyle",
-         mode =  "sigmoid" )
 
-    unet1 = antspynet.create_unet_model_3d(
-        [None,None,None,2],
-        number_of_outputs=number_of_outputs,
-        mode="classification",
-        number_of_filters=(32, 64, 96, 128, 256),
-        convolution_kernel_size=(3, 3, 3),
-        deconvolution_kernel_size=(2, 2, 2),
-        dropout_rate=0.0,
-        weight_decay=0,
-        additional_options = "nnUnetActivationStyle")
+    if get_backend() == 'antspynet':
+        unet0 = antspynet.create_unet_model_3d(
+             [ None, None, None, number_of_channels ],
+             number_of_outputs = 1, # number of landmarks must be known
+             number_of_layers = 4, # should optimize this wrt criterion
+             number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
+             convolution_kernel_size = 3, # maybe should optimize this wrt criterion
+             deconvolution_kernel_size = 2,
+             pool_size = 2,
+             strides = 2,
+             dropout_rate = 0.0,
+             weight_decay = 0,
+             additional_options = "nnUnetActivationStyle",
+             mode =  "sigmoid" )
 
-    # concat output to input and pass to 2nd net
-    # nextin = tf.concat(  [ unet0.inputs[0], unet0.outputs[0] ], axis=4 )
-    import tensorflow as tf
-    from tensorflow.keras.layers import Layer
-    class myConcat(Layer):
-        def call(self, x):
-            return tf.concat(x, axis=4 )
-    nextin = myConcat()( [ unet0.inputs[0], unet0.outputs[0] ] )
+        unet1 = antspynet.create_unet_model_3d(
+            [None,None,None,2],
+            number_of_outputs=number_of_outputs,
+            mode="classification",
+            number_of_filters=(32, 64, 96, 128, 256),
+            convolution_kernel_size=(3, 3, 3),
+            deconvolution_kernel_size=(2, 2, 2),
+            dropout_rate=0.0,
+            weight_decay=0,
+            additional_options = "nnUnetActivationStyle")
 
-    unetonnet = unet1( nextin )
-    unet_model = tf.keras.models.Model(
-            unet0.inputs,
-            [ unetonnet,  unet0.outputs[0] ] )
+        # concat output to input and pass to 2nd net
+        # nextin = tf.concat(  [ unet0.inputs[0], unet0.outputs[0] ], axis=4 )
+        import tensorflow as tf
+        from tensorflow.keras.layers import Layer
+        class myConcat(Layer):
+            def call(self, x):
+                return tf.concat(x, axis=4 )
+        nextin = myConcat()( [ unet0.inputs[0], unet0.outputs[0] ] )
 
-    unet_model.load_weights( nbm_weights )
+        unetonnet = unet1( nextin )
+        unet_model = tf.keras.models.Model(
+                unet0.inputs,
+                [ unetonnet,  unet0.outputs[0] ] )
+
+        unet_model.load_weights( nbm_weights )
+    else:
+        unet_model = antstorch.create_unet_model_3d(
+            [ None, None, None, number_of_channels ],
+            number_of_outputs=number_of_outputs,
+            mode="classification",
+            number_of_filters=(32, 64, 96, 128, 256),
+            convolution_kernel_size=(3, 3, 3),
+            deconvolution_kernel_size=(2, 2, 2),
+            dropout_rate=0.0,
+            weight_decay=0,
+            additional_options = "nnUnetActivationStyle")
+
+        raise NotImplementedError("Need to retrain the model with antstorch and update the data loading code accordingly.")
+
 
     imgprepro = nbmpreprocess( t1, pt_labels, group_labels,
         csfquantile = csfquantile,
@@ -2143,240 +2180,6 @@ def deep_nbm( t1,
         'description':bfsegdesc,
         'mask': imgprepro['mask'],
         'probability_images': probability_images }
-
-
-def deep_nbm_old( t1, ch13_weights, nbm_weights, registration=True,
-    csfquantile = 0.15, binary_mask=None, verbose=False ):
-
-    """
-    Nucleus basalis of Meynert segmentation and subdivision
-
-    Perform NBM segmentation in T1 images using Avants labels.
-
-    t1 : T1-weighted neuroimage antsImage - already brain extracted
-
-    ch13_weights : string weight file for ch13
-
-    nbm_weights : string weight file for nbm
-
-    registration : boolean to correct for image orientation and resolution by registration
-
-    csfquantile : float value below 0.5 that tries to trim residual CSF off brain.
-
-    binary_mask : will restrict output to this mask
-
-    The labeling is as follows:
-
-    Label,Description,Side
-    1,CH13_left,left
-    2,CH13_right,right
-    3,NBM_left_ant,left
-    4,NBM_left_mid,left
-    5,NBM_left_pos,left
-    6,NBM_right_ant,right
-    7,NBM_right_mid,right
-    8,NBM_right_pos,right
-
-    Failure modes will include odd image orientation (in which case you might
-    use the registration option).  A more nefarious issue can be a poor extraction
-    of the cerebrum in the inferior frontal lobe.  These can be unpredictable
-    but if one sees a bad extraction, please check the mask that is output by
-    this function to see if it excludes non-cerebral tissue.
-
-    """
-
-    labels = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-    label_descriptions = ['background',
-                          'CH13_left',
-                          'CH13_right',
-                          'NBM_left_ant',
-                          'NBM_left_mid',
-                          'NBM_left_pos',
-                          'NBM_right_ant',
-                          'NBM_right_mid',
-                          'NBM_right_pos',
-                          ]
-
-    t1use = ants.iMath( t1, "Normalize" )
-    if registration:
-        nbmtemplate = ants.image_read(get_data("nbm_template", target_extension=".nii.gz"))
-        orireg = ants.registration( fixed = nbmtemplate,
-            moving = t1use,
-            type_of_transform="antsRegistrationSyNQuickRepro[a]", total_sigma=0.5,verbose=False )
-        t1use = orireg['warpedmovout']
-
-    template = ants.image_read(get_data("CIT168_T1w_700um_pad_adni", target_extension=".nii.gz"))
-    templateSmall = ants.resample_image( template, [2.0,2.0,2.0] )
-    registrationsyn = ants.registration(
-        fixed=templateSmall,
-        moving=ants.iMath(t1use,"Normalize"),
-        type_of_transform="antsRegistrationSyNQuickRepro[s]", total_sigma=0.5, verbose=False )
-
-    if verbose:
-        print( registrationsyn['fwdtransforms'] )
-
-    image = ants.iMath( t1use, "TruncateIntensity", 0.0001, 0.999 ).iMath("Normalize")
-    bfPriorL1 = ants.image_read(get_data("CIT168_basal_forebrain_adni_prob_1_left", target_extension=".nii.gz"))
-    bfPriorR1 = ants.image_read(get_data("CIT168_basal_forebrain_adni_prob_1_right", target_extension=".nii.gz"))
-    bfPriorL2 = ants.image_read(get_data("CIT168_basal_forebrain_adni_prob_2_left", target_extension=".nii.gz"))
-    bfPriorR2 = ants.image_read(get_data("CIT168_basal_forebrain_adni_prob_2_right", target_extension=".nii.gz"))
-
-    patchSize = [ 64, 64, 32 ]
-    priorL1tosub = ants.apply_transforms( image, bfPriorL1, registrationsyn['invtransforms'] ).smooth_image( 3 ).iMath("Normalize")
-    priorR1tosub = ants.apply_transforms( image, bfPriorR1, registrationsyn['invtransforms'] ).smooth_image( 3 ).iMath("Normalize")
-    priorL2tosub = ants.apply_transforms( image, bfPriorL2, registrationsyn['invtransforms'] ).smooth_image( 3 ).iMath("Normalize")
-    priorR2tosub = ants.apply_transforms( image, bfPriorR2, registrationsyn['invtransforms'] ).smooth_image( 3 ).iMath("Normalize")
-
-    if binary_mask is None:
-        masker = ants.threshold_image(image, np.quantile(image[image>1e-4], csfquantile ), 1e9 )
-    else:
-        masker = ants.apply_transforms( image, binary_mask,
-            orireg['fwdtransforms'], interpolator='nearestNeighbor' )
-
-    ch13point = ants.get_center_of_mass( priorL1tosub + priorR1tosub )
-
-    nchanCH13 = 1
-    nclasstosegCH13 = 3 # for ch13
-    nchanNBM = 2
-    nclasstosegNBM = 4 # for nbm
-    actor = 'classification'
-    nfilt = 32
-    addoptsNBM = "nnUnetActivationStyle"
-    unetCH13 = antspynet.create_unet_model_3d(
-         [ None, None, None, nchanCH13 ],
-         number_of_outputs = nclasstosegCH13, # number of landmarks must be known
-         number_of_layers = 4, # should optimize this wrt criterion
-         number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
-         convolution_kernel_size = 3, # maybe should optimize this wrt criterion
-         deconvolution_kernel_size = 2,
-         pool_size = 2,
-         strides = 2,
-         dropout_rate = 0,
-         weight_decay = 0,
-         mode = 'classification' )
-    unetCH13.load_weights( ch13_weights )
-
-    physspace = special_crop( image, ch13point, patchSize)
-    ch13array = physspace.numpy()
-    newshape = list( ch13array.shape )
-    newshape.insert(0,1)
-    newshape.append(1)
-    ch13pred = unetCH13.predict( tf.reshape( ch13array, newshape ) )
-    probability_images = []
-    for jj in range(3):
-        temp = ants.from_numpy( ch13pred[0,:,:,:,jj] )
-        probability_images.append( ants.copy_image_info( physspace, temp ) )
-    bint = physspace * 0 + 1
-    image_matrix = ants.image_list_to_matrix(probability_images[1:(len(probability_images))], bint )
-    background_foreground_matrix = np.stack([ants.image_list_to_matrix([probability_images[0]], bint),
-        np.expand_dims(np.sum(image_matrix, axis=0), axis=0)])
-    foreground_matrix = np.argmax(background_foreground_matrix, axis=0)
-    segmentation_matrix = (np.argmax(image_matrix, axis=0) + 1) * foreground_matrix
-    segmentation_image = ants.matrix_to_images(np.expand_dims(segmentation_matrix, axis=0), bint)[0]
-    relabeled_image = ants.image_clone(segmentation_image)
-    ch13totalback = ants.resample_image_to_target(relabeled_image, image, interp_type='nearestNeighbor') * masker
-    if registration:
-        ch13totalback = ants.apply_transforms( t1, ch13totalback,
-            orireg['invtransforms'][0], whichtoinvert=[True], interpolator='nearestNeighbor' )
-
-    if verbose:
-        print("CH13 done")
-
-    maskind = 3
-    nlayers =  4 # for unet
-    unet1 = antspynet.create_unet_model_3d(
-         [ None, None, None, 2 ],
-          number_of_outputs = 1, # number of landmarks must be known
-           number_of_layers = 4, # should optimize this wrt criterion
-           number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
-           convolution_kernel_size = 3, # maybe should optimize this wrt criterion
-           deconvolution_kernel_size = 2,
-           pool_size = 2,
-           strides = 2,
-           dropout_rate = 0.0,
-           weight_decay = 0,
-           additional_options = "nnUnetActivationStyle",
-           mode = "sigmoid" )
-    maskinput = tf.keras.layers.Input( [ None, None,  None, 1 ] )
-    posteriorMask1 = tf.keras.layers.multiply(
-      [ unet1.outputs[0] , maskinput ], name='maskTimesPosteriors1'  )
-    unet = tf.keras.models.Model( [ unet1.inputs[0], maskinput ], posteriorMask1 )
-
-    unet2 = antspynet.create_unet_model_3d(
-         [ None, None, None, 2 ],
-          number_of_outputs = nclasstosegNBM, # number of landmarks must be known
-           number_of_layers = 4, # should optimize this wrt criterion
-           number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
-           convolution_kernel_size = 3, # maybe should optimize this wrt criterion
-           deconvolution_kernel_size = 2,
-           pool_size = 2,
-           strides = 2,
-           dropout_rate = 0.0,
-           weight_decay = 0,
-           additional_options = "nnUnetActivationStyle",
-           mode =  "classification" )
-
-    temp = tf.split( unet1.inputs[0], 2, axis=4 )
-    temp[1] = unet.outputs[0]
-    newmult = tf.concat( temp, axis=4 )
-    unetonnet = unet2( newmult )
-    unetNBM = tf.keras.models.Model(
-        unet.inputs,
-        [ unetonnet,  unet.outputs[0] ] )
-    unetNBM.load_weights( nbm_weights )
-
-    # do each side separately
-    bfseg = t1 * 0.0
-    for nbmnum in [0,1]:
-        if nbmnum == 0:
-            nbmpoint = ants.get_center_of_mass( priorL2tosub )
-            nbmprior = special_crop( priorL2tosub, nbmpoint, patchSize).numpy() # prior
-            labels=[3,4,5]
-        if nbmnum == 1:
-            nbmpoint = ants.get_center_of_mass( priorR2tosub )
-            nbmprior = special_crop( priorR2tosub, nbmpoint, patchSize).numpy() # prior
-            labels=[6,7,8]
-        physspaceNBM = special_crop( image, nbmpoint, patchSize) # image
-        nbmmask = special_crop( masker, nbmpoint, patchSize).numpy() # mask
-        tfarr1 = tf.stack( [physspaceNBM.numpy(),nbmprior], axis=3  )
-        newshapeNBM = list( tfarr1.shape )
-        newshapeNBM.insert(0,1)
-        tfarr1 = tf.reshape(tfarr1, newshapeNBM )
-        tfarr2 = tf.reshape( nbmmask, newshape )
-        nbmpred = unetNBM.predict( ( tfarr1, tfarr2  ) )
-        segpred = nbmpred[0]
-        sigmoidpred = nbmpred[1]
-        nbmpred1_image = ants.from_numpy( sigmoidpred[0,:,:,:,0] )
-        nbmpred1_image = ants.copy_image_info( physspaceNBM, nbmpred1_image )
-        bint = ants.threshold_image( nbmpred1_image, 0.5, 1.0 ).iMath("GetLargestComponent",1)
-        probability_images = []
-        for jj in range(3):
-            temp = ants.from_numpy( segpred[0,:,:,:,jj+1] )
-            probability_images.append( ants.copy_image_info( physspaceNBM, temp ) )
-        image_matrix = ants.image_list_to_matrix(probability_images, bint)
-        segmentation_matrix = (np.argmax(image_matrix, axis=0) + 1)
-        segmentation_image = ants.matrix_to_images(np.expand_dims(segmentation_matrix, axis=0), bint)[0]
-        relabeled_image = ants.image_clone(segmentation_image)
-        for i in range(len(labels)):
-            relabeled_image[segmentation_image==(i+1)] = labels[i]
-        relabeled_image = ants.resample_image_to_target(relabeled_image, image, interp_type='nearestNeighbor')
-        if registration:
-            relabeled_image = ants.apply_transforms( t1, relabeled_image,
-                    orireg['invtransforms'][0], whichtoinvert=[True],
-                    interpolator='nearestNeighbor' )
-        if verbose:
-            print("NBM" + str( nbmnum ) )
-        bfseg = bfseg + relabeled_image
-    bfseg = ch13totalback + bfseg * ants.threshold_image( ch13totalback, 0, 0 )
-    bfsegdesc = map_segmentation_to_dataframe( 'nbm3CH13', bfseg )
-
-    if registration:
-        masker = ants.apply_transforms( t1, masker,
-            orireg['invtransforms'][0], whichtoinvert=[True],
-            interpolator='nearestNeighbor' )
-
-    return { 'segmentation':bfseg, 'description':bfsegdesc, 'mask': masker }
-
 
 
 
@@ -2479,51 +2282,65 @@ def deep_cit168( t1, binary_mask = None,
         number_of_outputs = len(group_labels)
         number_of_channels = len(group_labels)
 
-        unet0 = antspynet.create_unet_model_3d(
-                 [ None, None, None, number_of_channels ],
-                 number_of_outputs = 1, # number of landmarks must be known
-                 number_of_layers = 4, # should optimize this wrt criterion
-                 number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
-                 convolution_kernel_size = 3, # maybe should optimize this wrt criterion
-                 deconvolution_kernel_size = 2,
-                 pool_size = 2,
-                 strides = 2,
-                 dropout_rate = 0.0,
-                 weight_decay = 0,
-                 additional_options = "nnUnetActivationStyle",
-                 mode =  "sigmoid" )
+        if get_backend() == 'antspynet': 
+            unet0 = antspynet.create_unet_model_3d(
+                     [ None, None, None, number_of_channels ],
+                     number_of_outputs = 1, # number of landmarks must be known
+                     number_of_layers = 4, # should optimize this wrt criterion
+                     number_of_filters_at_base_layer = 32, # should optimize this wrt criterion
+                     convolution_kernel_size = 3, # maybe should optimize this wrt criterion
+                     deconvolution_kernel_size = 2,
+                     pool_size = 2,
+                     strides = 2,
+                     dropout_rate = 0.0,
+                     weight_decay = 0,
+                     additional_options = "nnUnetActivationStyle",
+                     mode =  "sigmoid" )
 
-        unet1 = antspynet.create_unet_model_3d(
-            [None,None,None,2],
-            number_of_outputs=number_of_outputs,
-            mode="classification",
-            number_of_filters=(32, 64, 96, 128, 256),
-            convolution_kernel_size=(3, 3, 3),
-            deconvolution_kernel_size=(2, 2, 2),
-            dropout_rate=0.0,
-            weight_decay=0,
-            additional_options = "nnUnetActivationStyle")
+            unet1 = antspynet.create_unet_model_3d(
+                [None,None,None,2],
+                number_of_outputs=number_of_outputs,
+                mode="classification",
+                number_of_filters=(32, 64, 96, 128, 256),
+                convolution_kernel_size=(3, 3, 3),
+                deconvolution_kernel_size=(2, 2, 2),
+                dropout_rate=0.0,
+                weight_decay=0,
+                additional_options = "nnUnetActivationStyle")
 
-#        temp = tf.split( unet0.inputs[0], 9, axis=4 )
-        import tensorflow as tf
-        from tensorflow.keras.layers import Layer
-        class mySplit(Layer):
-            def call(self, x):
-                return tf.split(x, 9, axis=4 )
-        temp = mySplit()( unet0.inputs[0] )
+            import tensorflow as tf
+            from tensorflow.keras.layers import Layer
+            class mySplit(Layer):
+                def call(self, x):
+                    return tf.split(x, 9, axis=4 )
+            temp = mySplit()( unet0.inputs[0] )
 
-        temp[1] = unet0.outputs[0]
+            temp[1] = unet0.outputs[0]
 
-        class myConcat(Layer):
-            def call(self, x):
-                return tf.concat(x, axis=4 )
-#        newmult = tf.concat( temp[0:2], axis=4 )
-        newmult = myConcat()( temp[0:2] )
-        unetonnet = unet1( newmult )
-        unet_model = tf.keras.models.Model(
-                unet0.inputs,
-                [ unetonnet,  unet0.outputs[0] ] )
-        unet_model.load_weights( newfn )
+            class myConcat(Layer):
+                def call(self, x):
+                    return tf.concat(x, axis=4 )
+    #        newmult = tf.concat( temp[0:2], axis=4 )
+            newmult = myConcat()( temp[0:2] )
+            unetonnet = unet1( newmult )
+            unet_model = tf.keras.models.Model(
+                    unet0.inputs,
+                    [ unetonnet,  unet0.outputs[0] ] )
+            unet_model.load_weights( newfn )
+        else:
+            unet_model = antstorch.create_unet_model_3d(
+                [ None, None, None, number_of_channels ],
+                number_of_outputs=number_of_outputs,
+                mode="classification",
+                number_of_filters=(32, 64, 96, 128, 256),
+                convolution_kernel_size=(3, 3, 3),
+                deconvolution_kernel_size=(2, 2, 2),
+                dropout_rate=0.0,
+                weight_decay=0,
+                additional_options = "nnUnetActivationStyle")
+
+            raise NotImplementedError("Need to retrain the model with antstorch and update the data loading code accordingly.")        
+
         ###################
         nbmprior = special_crop( priortosub, pt, patchSize).numpy() # prior
         imgnp = tf.reshape( physspaceCIT.numpy(), [160, 160, 112,1])
@@ -2669,24 +2486,38 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
     tfn = get_data('T_template0', target_extension='.nii.gz' )
     tfnw = get_data('T_template0_WMP', target_extension='.nii.gz' )
     tlrfn = get_data('T_template0_LR', target_extension='.nii.gz' )
-    bfn = antspynet.get_antsxnet_data( "croppedMni152" )
+    if get_backend() == 'antspynet': 
+        bfn = antspynet.get_antsxnet_data( "croppedMni152" )
+    else:
+        bfn = antstorch.get_antstorch_data( "croppedMni152" )    
 
     ##### read images and do simple bxt ops
     templatea = ants.image_read( tfn )
     if verbose:
         print("bxt")
-    templatea = ( templatea * antspynet.brain_extraction( templatea, 't1' ) ).iMath( "Normalize" )
-    templateawmprior = ants.image_read( tfnw )
+    
+    if get_backend() == 'antspynet': 
+        template_brain_mask = antspynet.brain_extraction( templatea, 't1' )    
+    else:        
+        template_brain_mask = antstorch.brain_extraction( templatea, 't1' ) 
+    templatea = ( templatea * template_brain_mask ).iMath( "Normalize" )
+
     templatealr = ants.image_read( tlrfn )
     templateb = ants.image_read( bfn )
-    templateb = ( templateb * antspynet.brain_extraction( templateb, 't1' ) ).iMath( "Normalize" )
+    if get_backend() == 'antspynet': 
+        template_brain_mask = antspynet.brain_extraction( templateb, 't1' )    
+    else:        
+        template_brain_mask = antstorch.brain_extraction( templateb, 't1' ) 
+    templateb = ( templateb * template_brain_mask ).iMath( "Normalize" )
+
     if imgbxt is None:
-        probablySR = False
-        # brain_extraction( ants.iMath( x, "Normalize" ) )
-        imgbxt =  antspynet.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,1)
+        if get_backend() == 'antspynet':
+            imgbxt =  antspynet.brain_extraction( x, modality="t1threetissue")['segmentation_image']
+        else:
+            imgbxt =  antstorch.brain_extraction( x, modality="t1threetissue")['segmentation_image']     
+        imgbxt = ants.threshold_image( imgbxt, 1, 1 )  
         img = preprocess_intensity( ants.iMath( x, "Normalize" ), imgbxt )
     else:
-        probablySR = True
         img = ants.iMath( x, "Normalize" )
 
     if verbose:
@@ -2899,12 +2730,18 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5],
     brainstem_desc = map_segmentation_to_dataframe( 'CIT168_T1w_700um_pad_adni_brainstem', brainstemseg )
     brainstem_desc = brainstem_desc.loc[:, ~brainstem_desc.columns.str.contains('^Side')]
 
-
     # cerebellum
-    cereb = antspynet.cerebellum_morphology( ants.iMath( x, "Normalize" ), compute_thickness_image=False, verbose=False, do_preprocessing=True )
-    # refinement with cerebellum estimate (comment out since it's not needed for this image).
-    maskc = ants.threshold_image(cereb['cerebellum_probability_image'], 0.5, 1, 1, 0)
-    cereb = antspynet.cerebellum_morphology( ants.iMath( x, "Normalize" ), cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
+    if get_backend() == 'antspynet':
+        cereb = antspynet.cerebellum_morphology( ants.iMath( x, "Normalize" ), compute_thickness_image=False, verbose=False, do_preprocessing=True )
+        # refinement with cerebellum estimate (comment out since it's not needed for this image).
+        maskc = ants.threshold_image(cereb['cerebellum_probability_image'], 0.5, 1, 1, 0)
+        cereb = antspynet.cerebellum_morphology( ants.iMath( x, "Normalize" ), cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
+    else:   
+        cereb = antstorch.cerebellum_morphology( ants.iMath( x, "Normalize" ), compute_thickness_image=False, verbose=False, do_preprocessing=True )
+        # refinement with cerebellum estimate (comment out since it's not needed for this image).
+        maskc = ants.threshold_image(cereb['cerebellum_probability_image'], 0.5, 1, 1, 0)
+        cereb = antstorch.cerebellum_morphology( ants.iMath( x, "Normalize" ), cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
+
     cereb_desc = map_segmentation_to_dataframe( 'cerebellum', cereb['parcellation_segmentation_image'] ).dropna(axis=0)
 
     if verbose:
@@ -3441,13 +3278,13 @@ def super_resolution_segmentation_per_label(
                     pred = tf.split( pred, 2, axis=4 )
                 if verbose:
                     print("predict done")
-                imgsr = ants.from_numpy( tf.squeeze( pred[0] ).numpy())
+                imgsr = ants.from_numpy( np.squeeze( pred[0] ).numpy())
                 if verbose:
                     print( imgc )
                     print( imgsr )
                 imgsr = ants.copy_image_info( imgc, imgsr )
                 ants.set_spacing( imgsr,  newspc )
-                imgsrh = ants.from_numpy( tf.squeeze( pred[1] ).numpy())
+                imgsrh = ants.from_numpy( np.squeeze( pred[1] ).numpy())
                 imgsrh = ants.copy_image_info( imgc, imgsrh )
                 ants.set_spacing( imgsrh,  newspc )
                 if poly_order is not None:
@@ -3669,7 +3506,11 @@ def minimal_sr_preprocessing( x, imgbxt=None ):
 
     ##### read images and do simple bxt ops
     templatea = ants.image_read( tfn )
-    templatea = ( templatea * antspynet.brain_extraction( templatea, 't1' ) ).iMath( "Normalize" )
+    if get_backend() == 'antspynet':
+        template_mask = antspynet.brain_extraction( templatea, 't1' )
+    else:
+        template_mask = antstorch.brain_extraction( templatea, 't1' )    
+    templatea = ( templatea * template_mask ).iMath( "Normalize" )
     templatealr = ants.image_read( tlrfn )
     if imgbxt is None:
         imgbxt = brain_extraction( ants.iMath( x, "Normalize" ) )

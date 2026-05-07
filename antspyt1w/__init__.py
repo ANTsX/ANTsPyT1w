@@ -5,6 +5,8 @@ except:
     pass
 
 from .get_data import get_data
+from .get_data import get_backend
+from .get_data import set_backend
 from .get_data import map_segmentation_to_dataframe
 from .get_data import random_basis_projection
 from .get_data import hierarchical
