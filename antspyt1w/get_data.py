@@ -261,7 +261,6 @@ def patch_eigenvalue_ratio( x, n, radii, evdepth = 0.9, mask=None, standardize=F
         X = X - X.mean(axis=0, keepdims=True)
     thespectrum = np.linalg.svd( X, compute_uv=False )
     spectralsum = thespectrum.sum()
-    targetspec = spectralsum * evdepth
     spectralcumsum = np.cumsum( thespectrum )
     numer = np.argmin(  abs( spectralcumsum - evdepth * spectralsum ) )
     denom = len( thespectrum )
@@ -365,10 +364,10 @@ def subdivide_labels( x, verbose = False ):
     return newx
 
 def subdivide_hemi_label( x  ):
-    notzero=ants.threshold_image( x, 1, 1e9 )
-    localshape=ants.crop_image( x, ants.threshold_image( x, 1, 1 ) ).shape
-    axtosplit=np.argmax(localshape)
-    mid=int(np.round( localshape[axtosplit] /2 ))
+    notzero = ants.threshold_image( x, 1, 1e9 )
+    localshape = ants.crop_image( x, ants.threshold_image( x, 1, 1 ) ).shape
+    axtosplit = np.argmax(localshape)
+    mid = int(np.round( localshape[axtosplit] /2 ))
     if axtosplit == 1:
         x[:,0:mid,:]=x[:,0:mid,:]+3
         x[:,(mid):(localshape[axtosplit]),:]=x[:,(mid):(localshape[axtosplit]),:]+5
@@ -487,7 +486,7 @@ def region_reg(input_image, input_image_tissue_segmentation, input_image_region_
     img = ants.rank_intensity( input_image )
     ionlycerebrum = brain_extraction( input_image )
     template = ants.rank_intensity( input_template )
-    regsegits=[200,200,20]
+    regsegits = [200,200,20]
 
     if min(ants.get_spacing(img)) < 0.8:
         regsegits=[200,200,200,20]
@@ -529,9 +528,11 @@ def preprocess_intensity( x, brain_extraction, intensity_truncation_quantiles=[1
     img = ants.n4_bias_field_correction( img, mask=brain_extraction, rescale_intensities=rescale_intensities, ).iMath("Normalize")
     return img
 
-def kelly_kapowski_thickness( x, labels, label_description='dkt', iterations=45, max_thickness=6.0, mydap=None, verbose=False ):
-    if verbose: myverb=1
-    else: myverb=0
+def kelly_kapowski_thickness( x, labels, label_description='dkt', iterations=45, max_thickness=6.0, verbose=False ):
+    if verbose: 
+        myverb=1
+    else: 
+        myverb=0
     seg = deep_tissue_segmentation( x )
     kkthk = ants.kelly_kapowski( s=seg['segmentation_image'],
             g=seg['probability_images'][2], w=seg['probability_images'][3],
@@ -1000,7 +1001,6 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
         plt.close()
 
     rbpb=None
-    evratio=None
     if option == 'both' or option == 'brain':
         if option == 'both':
             t1 = ants.iMath( x, "TruncateIntensity",0.001, 0.999).iMath("Normalize")
@@ -1146,12 +1146,6 @@ def deep_brain_parcellation( target_image, template, img6seg = None, do_cortical
         "dkt_cortex": cortprop, "hemisphere_labels": myhemi,
         "wmSNR": wmMean/wmStd, "wmcsfSNR": wmMean/csfStd, }
 
-def dap( x ):
-    if get_global_version() == 0 or get_backend() == 'antspynet': 
-        return antspynet.deep_atropos( x, do_preprocessing=True, do_denoising=False )['segmentation_image']
-    else:
-        return antstorch.deep_atropos( x, do_preprocessing=True )['segmentation_image']    
-
 def deep_mtl(t1, sr_model=None, verbose=True):
     verbose = False
     if get_global_version() == 0 or get_backend() == 'antspynet': 
@@ -1197,7 +1191,8 @@ def deep_nbm( t1, nbm_weights=None, binary_mask=None, deform=False, aged_templat
             imgr = ants.rank_intensity( img ) if masker is None else ants.rank_intensity( img, mask = masker )
             if csfquantile is not None and masker is None:
                 masker = ants.threshold_image( imgr, np.quantile(imgr[imgr>1e-4], csfquantile ), 1e9 )
-            if masker is not None: imgr = imgr * masker
+            if masker is not None: 
+                imgr = imgr * masker
             imgrsmall = ants.resample_image( imgr, [1,1,1] )
             if not reflect:
                 reg = ants.registration( refimgsmall, imgrsmall, 'antsRegistrationSyNQuickRepro[s]', reg_iterations = [200,200,20],total_sigma=0.5, verbose=False )
@@ -1216,8 +1211,8 @@ def deep_nbm( t1, nbm_weights=None, binary_mask=None, deform=False, aged_templat
             return { "img": imgraff, "seg": imgseg, "imgc": special_crop( imgraff, com, crop_size ), "segc": special_crop( imgseg, com, crop_size ), "reg" : reg, "mask": masker }
 
         nLabels, number_of_outputs, number_of_channels = len( group_labels ), len(group_labels), 1
-        unet0 = antspynet.create_unet_model_3d( [ None, None, None, number_of_channels ], number_of_outputs = 1, number_of_layers = 4, number_of_filters_at_base_layer = 32, convolution_kernel_size = 3, deconvolution_kernel_size = 2, pool_size = 2, strides = 2, dropout_rate = 0.0, weight_decay = 0, additional_options = "nnUnetActivationStyle", mode =  "sigmoid" )
-        unet1 = antspynet.create_unet_model_3d( [None,None,None,2], number_of_outputs=number_of_outputs, mode="classification", number_of_filters=(32, 64, 96, 128, 256), convolution_kernel_size=(3, 3, 3), deconvolution_kernel_size=(2, 2, 2), dropout_rate=0.0, weight_decay=0, additional_options = "nnUnetActivationStyle")
+        unet0 = antspynet.create_unet_model_3d( [None, None, None, number_of_channels ], number_of_outputs = 1, number_of_layers = 4, number_of_filters_at_base_layer = 32, convolution_kernel_size = 3, deconvolution_kernel_size = 2, pool_size = 2, strides = 2, dropout_rate = 0.0, weight_decay = 0, additional_options = "nnUnetActivationStyle", mode =  "sigmoid" )
+        unet1 = antspynet.create_unet_model_3d( [None, None, None, 2], number_of_outputs=number_of_outputs, mode="classification", number_of_filters=(32, 64, 96, 128, 256), convolution_kernel_size=(3, 3, 3), deconvolution_kernel_size=(2, 2, 2), dropout_rate=0.0, weight_decay=0, additional_options = "nnUnetActivationStyle")
 
         class myConcat(Layer):
             def call(self, x): return tf.concat(x, axis=4 )
@@ -1291,8 +1286,10 @@ def deep_cit168( t1, binary_mask=None, syn_type='antsRegistrationSyNQuickRepro[s
         image = ants.apply_transforms( nbmtemplate, ants.iMath( t1, "Normalize" ), orireg['fwdtransforms'][1] )
         image = ants.iMath( image, "TruncateIntensity",0.001,0.999).iMath("Normalize")
         patchSize = [ 160,160,112 ]
-        if priors is None: priortosub = ants.apply_transforms( image, myprior, orireg['invtransforms'][1], interpolator='nearestNeighbor' )
-        else: priortosub = ants.apply_transforms( image, priors, orireg['fwdtransforms'][1], interpolator='nearestNeighbor' )
+        if priors is None: 
+            priortosub = ants.apply_transforms( image, myprior, orireg['invtransforms'][1], interpolator='nearestNeighbor' )
+        else: 
+            priortosub = ants.apply_transforms( image, priors, orireg['fwdtransforms'][1], interpolator='nearestNeighbor' )
         bmask = ants.threshold_image( priortosub, 1, 999 )
         pt = list( ants.get_center_of_mass( bmask ) )
         pt[1] = pt[1] + 10.0  
@@ -1313,8 +1310,8 @@ def deep_cit168( t1, binary_mask=None, syn_type='antsRegistrationSyNQuickRepro[s
 
             number_of_outputs, number_of_channels = len(group_labels), len(group_labels)
 
-            unet0 = antspynet.create_unet_model_3d( [ None, None, None, number_of_channels ], number_of_outputs = 1, number_of_layers = 4, number_of_filters_at_base_layer = 32, convolution_kernel_size = 3, deconvolution_kernel_size = 2, pool_size = 2, strides = 2, dropout_rate = 0.0, weight_decay = 0, additional_options = "nnUnetActivationStyle", mode =  "sigmoid" )
-            unet1 = antspynet.create_unet_model_3d( [None,None,None,2], number_of_outputs=number_of_outputs, mode="classification", number_of_filters=(32, 64, 96, 128, 256), convolution_kernel_size=(3, 3, 3), deconvolution_kernel_size=(2, 2, 2), dropout_rate=0.0, weight_decay=0, additional_options = "nnUnetActivationStyle")
+            unet0 = antspynet.create_unet_model_3d( [None, None, None, number_of_channels ], number_of_outputs = 1, number_of_layers = 4, number_of_filters_at_base_layer = 32, convolution_kernel_size = 3, deconvolution_kernel_size = 2, pool_size = 2, strides = 2, dropout_rate = 0.0, weight_decay = 0, additional_options = "nnUnetActivationStyle", mode =  "sigmoid" )
+            unet1 = antspynet.create_unet_model_3d( [None, None, None, 2], number_of_outputs=number_of_outputs, mode="classification", number_of_filters=(32, 64, 96, 128, 256), convolution_kernel_size=(3, 3, 3), deconvolution_kernel_size=(2, 2, 2), dropout_rate=0.0, weight_decay=0, additional_options = "nnUnetActivationStyle")
 
             class mySplit(Layer):
                 def call(self, x): return tf.split(x, 9, axis=4 )
@@ -1343,7 +1340,8 @@ def deep_cit168( t1, binary_mask=None, syn_type='antsRegistrationSyNQuickRepro[s
             nbmpred1_image = ants.from_numpy( sigmoidpred[0,:,:,:,0] )
             nbmpred1_image = ants.copy_image_info( physspaceCIT, nbmpred1_image )
             nbmpred1_image = map_back_cit( nbmpred1_image, t1, orireg, 'linear'  )
-            if binary_mask is not None: nbmpred1_image = nbmpred1_image * binary_mask
+            if binary_mask is not None: 
+                nbmpred1_image = nbmpred1_image * binary_mask
             bint = ants.threshold_image( nbmpred1_image, 0.5, 1.0 )
 
             probability_images = []
@@ -1360,7 +1358,8 @@ def deep_cit168( t1, binary_mask=None, syn_type='antsRegistrationSyNQuickRepro[s
             for i in np.unique(segmentation_image.numpy()):
                 if i > 0 :
                     temp = ants.threshold_image(segmentation_image,i,i)
-                    if group_labels[int(i)] < 33: temp = ants.iMath( temp, "GetLargestComponent",1)
+                    if group_labels[int(i)] < 33: 
+                        temp = ants.iMath( temp, "GetLargestComponent",1)
                     relabeled_image = relabeled_image + temp*group_labels[int(i)]
             cit168seg = cit168seg + relabeled_image
 
@@ -1378,18 +1377,22 @@ def deep_cit168( t1, binary_mask=None, syn_type='antsRegistrationSyNQuickRepro[s
 def minimal_sr_preprocessing( x, imgbxt=None ):
     if x.dimension != 3: raise ValueError('hierarchical: input image should be 3-dimensional')
 
-    tfn, tlrfn = get_data('T_template0', target_extension='.nii.gz' ), get_data('T_template0_LR', target_extension='.nii.gz' )
+    tfn = get_data('T_template0', target_extension='.nii.gz' ), 
+    tlrfn = get_data('T_template0_LR', target_extension='.nii.gz' )
     templatea = ants.image_read( tfn )
     
     if get_global_version() == 0:
         templatea = ( templatea * antspynet.brain_extraction( templatea, 't1' ) ).iMath( "Normalize" )
     else:
-        if get_backend() == 'antspynet': template_mask = antspynet.brain_extraction( templatea, 't1' )
-        else: template_mask = antstorch.brain_extraction( templatea, 't1' )    
+        if get_backend() == 'antspynet': 
+            template_mask = antspynet.brain_extraction( templatea, 't1' )
+        else: 
+            template_mask = antstorch.brain_extraction( templatea, 't1' )    
         templatea = ( templatea * template_mask ).iMath( "Normalize" )
         
     templatealr = ants.image_read( tlrfn )
-    if imgbxt is None: imgbxt = brain_extraction( ants.iMath( x, "Normalize" ) )
+    if imgbxt is None: 
+        imgbxt = brain_extraction(x)
         
     img = preprocess_intensity( ants.iMath( x, "Normalize" ), imgbxt )
     img = ants.iMath( img, "Normalize" )
@@ -1397,19 +1400,25 @@ def minimal_sr_preprocessing( x, imgbxt=None ):
     return img, mylr * imgbxt
 
 def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5], imgbxt=None, img6seg=None, cit168=False, is_test=False, atropos_prior=None, sr_model=None, verbose=True ):
-    if x.dimension != 3: raise ValueError('hierarchical: input image should be 3-dimensional')
+    if x.dimension != 3: 
+        raise ValueError('hierarchical: input image should be 3-dimensional')
 
-    tfn, tfnw, tlrfn = get_data('T_template0', target_extension='.nii.gz' ), get_data('T_template0_WMP', target_extension='.nii.gz' ), get_data('T_template0_LR', target_extension='.nii.gz' )
-    if get_global_version() == 0 or get_backend() == 'antspynet': bfn = antspynet.get_antsxnet_data( "croppedMni152" )
-    else: bfn = antstorch.get_antstorch_data( "croppedMni152" )    
+    tfn = get_data('T_template0', target_extension='.nii.gz' )
+    tlrfn = get_data('T_template0_LR', target_extension='.nii.gz' )
+
+    if get_global_version() == 0 or get_backend() == 'antspynet': 
+        bfn = antspynet.get_antsxnet_data( "croppedMni152" )
+    else: 
+        bfn = antstorch.get_antstorch_data( "croppedMni152" )    
 
     templatea = ants.image_read( tfn )
     if get_global_version() == 0:
         templatea = ( templatea * antspynet.brain_extraction( templatea, 't1' ) ).iMath( "Normalize" )
-        templateawmprior = ants.image_read( tfnw )
     else:
-        if get_backend() == 'antspynet': template_brain_mask = antspynet.brain_extraction( templatea, 't1' )    
-        else: template_brain_mask = antstorch.brain_extraction( templatea, 't1' ) 
+        if get_backend() == 'antspynet': 
+            template_brain_mask = antspynet.brain_extraction( templatea, 't1' )    
+        else: 
+            template_brain_mask = antstorch.brain_extraction( templatea, 't1' ) 
         templatea = ( templatea * template_brain_mask ).iMath( "Normalize" )
 
     templatealr = ants.image_read( tlrfn )
@@ -1418,16 +1427,20 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5], imgbxt=None, i
     if get_global_version() == 0:
         templateb = ( templateb * antspynet.brain_extraction( templateb, 't1' ) ).iMath( "Normalize" )
     else:
-        if get_backend() == 'antspynet': template_brain_mask = antspynet.brain_extraction( templateb, 't1' )    
-        else: template_brain_mask = antstorch.brain_extraction( templateb, 't1' ) 
+        if get_backend() == 'antspynet': 
+            template_brain_mask = antspynet.brain_extraction( templateb, 't1' )    
+        else: 
+            template_brain_mask = antstorch.brain_extraction( templateb, 't1' ) 
         templateb = ( templateb * template_brain_mask ).iMath( "Normalize" )
 
     if imgbxt is None:
         if get_global_version() == 0:
-            imgbxt =  antspynet.brain_extraction( ants.iMath( x, "Normalize" ), modality="t1threetissue")['segmentation_image'].threshold_image(1,1)
+            imgbxt =  antspynet.brain_extraction( x, modality="t1threetissue")['segmentation_image'].threshold_image(1,1)
         else:
-            if get_backend() == 'antspynet': imgbxt = antspynet.brain_extraction( x, modality="t1threetissue")['segmentation_image']
-            else: imgbxt = antstorch.brain_extraction( x, modality="t1threetissue")['segmentation_image']     
+            if get_backend() == 'antspynet': 
+                imgbxt = antspynet.brain_extraction( x, modality="t1threetissue")['segmentation_image']
+            else: 
+                imgbxt = antstorch.brain_extraction( x, modality="t1threetissue")['segmentation_image']     
             imgbxt = ants.threshold_image( imgbxt, 1, 1 )  
         img = preprocess_intensity( ants.iMath( x, "Normalize" ), imgbxt )
     else:
@@ -1507,13 +1520,13 @@ def hierarchical( x, output_prefix, labels_to_register=[2,3,4,5], imgbxt=None, i
     brainstem_desc = brainstem_desc.loc[:, ~brainstem_desc.columns.str.contains('^Side')]
 
     if get_global_version() == 0 or get_backend() == 'antspynet':
-        cereb = antspynet.cerebellum_morphology( ants.iMath( x, "Normalize" ), compute_thickness_image=False, verbose=False, do_preprocessing=True )
+        cereb = antspynet.cerebellum_morphology( x, compute_thickness_image=False, verbose=False, do_preprocessing=True )
         maskc = ants.threshold_image(cereb['cerebellum_probability_image'], 0.5, 1, 1, 0)
-        cereb = antspynet.cerebellum_morphology( ants.iMath( x, "Normalize" ), cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
+        cereb = antspynet.cerebellum_morphology( x, cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
     else:   
-        cereb = antstorch.cerebellum_morphology( ants.iMath( x, "Normalize" ), compute_thickness_image=False, verbose=False, do_preprocessing=True )
+        cereb = antstorch.cerebellum_morphology( x, compute_thickness_image=False, verbose=False, do_preprocessing=True )
         maskc = ants.threshold_image(cereb['cerebellum_probability_image'], 0.5, 1, 1, 0)
-        cereb = antstorch.cerebellum_morphology( ants.iMath( x, "Normalize" ), cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
+        cereb = antstorch.cerebellum_morphology( x, cerebellum_mask=maskc, compute_thickness_image=False, verbose=False, do_preprocessing=True )
 
     cereb_desc = map_segmentation_to_dataframe( 'cerebellum', cereb['parcellation_segmentation_image'] ).dropna(axis=0)
 
