@@ -15,11 +15,8 @@ import os
 from os.path import exists
 import pandas as pd
 import math
-import pickle
-import sys
 import numpy as np
 import random
-import re
 import functools
 from operator import mul
 from scipy.sparse.linalg import svds
@@ -27,10 +24,8 @@ from PyNomaly import loop
 import scipy as sp
 import matplotlib.pyplot as plt
 from PIL import Image
-import scipy.stats as ss
 import warnings
 import ants
-from multiprocessing import Pool
 
 # -------------------------------------------------------------------------
 # BACKENDS & VERSIONING
@@ -967,6 +962,8 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
     if x.dimension != 3:
         raise ValueError('inspect_raw_t1: input image should be 3-dimensional')
 
+    print("option = " + option) 
+
     x = ants.iMath( x, "Normalize" )
     csvfn, pngfn = output_prefix + "head.csv", output_prefix + "head.png"
     csvfnb, pngfnb = output_prefix + "brain.csv", output_prefix + "brain.png"
@@ -1000,9 +997,12 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
         plt.savefig( pngfn, bbox_inches='tight',pad_inches = 0)
         plt.close()
 
+    ants.image_write(x, "~/Desktop/test_x.nii.gz")    
+
     rbpb=None
     if option == 'both' or option == 'brain':
         if option == 'both':
+            print("both")
             t1 = ants.iMath( x, "TruncateIntensity",0.001, 0.999).iMath("Normalize")
             if get_global_version() == 0 or get_backend() == 'antspynet':
                 lomask = antspynet.brain_extraction( t1, "t1" )
@@ -1010,10 +1010,18 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
                 lomask = antstorch.brain_extraction( t1, "t1" )
             t1 = ants.rank_intensity( t1 * lomask, get_mask=True )
         else:
+            print("Not both")
             t1 = ants.iMath( x, "Normalize" )
+            ants.image_write(t1, "~/Desktop/test_t1_0.nii.gz")    
             t1 = ants.rank_intensity( t1, get_mask=True )
+            ants.image_write(t1, "~/Desktop/test_t1_1.nii.gz")    
             
+        ants.image_write(t1, "~/Desktop/test_t1_2.nii.gz")    
         ants.plot( t1, axis=2, nslices=21, ncol=7, filename=pngfnb, crop=True )
+        print("option = " + option) 
+        print("file = " + pngfnb)
+        raise ValueError("HERE")
+
         templateb = ants.image_read( get_data( "S_template3_brain", target_extension='.nii.gz' ) )
         templatesmall = ants.resample_image( templateb, (2,2,2), use_voxels=False )
         rbpb = random_basis_projection( t1, templatesmall, type_of_transform='Rigid', refbases=rbb )
