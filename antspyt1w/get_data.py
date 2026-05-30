@@ -745,7 +745,8 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
         rbpb['evratio'] = patch_eigenvalue_ratio( t1, 512, [20,20,20], evdepth = 0.9 )
         grade0 = resnet_grader( t1 ).gradeNum[0]
         msk=ants.threshold_image(t1,0.01,1.0)
-        t1tx=ants.n4_bias_field_correction( t1, mask=msk )
+        t1_for_n4 = ants.iMath( t1, "Normalize" ) * 99 + 1
+        t1tx=ants.n4_bias_field_correction( t1_for_n4, mask=msk )
         t1tx=ants.iMath(t1tx,'TruncateIntensity',0.001,0.98)
         grade1 = resnet_grader( t1tx ).gradeNum[0]
         if grade1 > grade0:
@@ -2598,10 +2599,11 @@ def preprocess_intensity( x, brain_extraction,
     brain_extraction = ants.resample_image_to_target( brain_extraction, x, interp_type='nearestNeighbor' )
     img = x * brain_extraction
     # print( "PP input : " + str( img.mean() ) )
-    img = ants.iMath( img, "TruncateIntensity", intensity_truncation_quantiles[0], intensity_truncation_quantiles[1] ).iMath( "Normalize" )
+    img = ants.iMath( img, "TruncateIntensity", intensity_truncation_quantiles[0], intensity_truncation_quantiles[1] )
     # print( "PP Trunc : " + str( img.mean() ) )
     # img = ants.denoise_image( img, brain_extraction, noise_model='Gaussian')
     # print( "PP DNZ : " + str( img.mean() ) )
+    img = ants.iMath( img, "Normalize" ) * 99 + 1
     img = ants.n4_bias_field_correction( img, mask=brain_extraction, rescale_intensities=rescale_intensities, ).iMath("Normalize")
     # print( "PP N4 : " + str( img.mean() ) )
     return img
