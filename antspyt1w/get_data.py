@@ -519,8 +519,12 @@ def region_reg(input_image, input_image_tissue_segmentation, input_image_region_
 def preprocess_intensity( x, brain_extraction, intensity_truncation_quantiles=[1e-4, 0.999], rescale_intensities=True  ):
     brain_extraction = ants.resample_image_to_target( brain_extraction, x, interp_type='nearestNeighbor' )
     img = x * brain_extraction
-    img = ants.iMath( img, "TruncateIntensity", intensity_truncation_quantiles[0], intensity_truncation_quantiles[1] ).iMath( "Normalize" )
-    img = ants.n4_bias_field_correction( img, mask=brain_extraction, rescale_intensities=rescale_intensities, ).iMath("Normalize")
+    img = ants.iMath( img, "TruncateIntensity", intensity_truncation_quantiles[0], intensity_truncation_quantiles[1] )
+
+    # Rescale to [1,100] to avoid numerical issues with log-processing in N4
+    img = ants.iMath( img, "Normalize" ) * 99 + 1
+    img = ants.n4_bias_field_correction( img, mask=brain_extraction, rescale_intensities=rescale_intensities)
+    img = ants.iMath( img, "Normalize" )
     return img
 
 def kelly_kapowski_thickness( x, labels, label_description='dkt', iterations=45, max_thickness=6.0, verbose=False ):
@@ -962,8 +966,6 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
     if x.dimension != 3:
         raise ValueError('inspect_raw_t1: input image should be 3-dimensional')
 
-    print("option = " + option) 
-
     x = ants.iMath( x, "Normalize" )
     csvfn, pngfn = output_prefix + "head.csv", output_prefix + "head.png"
     csvfnb, pngfnb = output_prefix + "brain.csv", output_prefix + "brain.png"
@@ -997,12 +999,9 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
         plt.savefig( pngfn, bbox_inches='tight',pad_inches = 0)
         plt.close()
 
-    ants.image_write(x, "~/Desktop/test_x.nii.gz")    
-
     rbpb=None
     if option == 'both' or option == 'brain':
         if option == 'both':
-            print("both")
             t1 = ants.iMath( x, "TruncateIntensity",0.001, 0.999).iMath("Normalize")
             if get_global_version() == 0 or get_backend() == 'antspynet':
                 lomask = antspynet.brain_extraction( t1, "t1" )
@@ -1010,17 +1009,10 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
                 lomask = antstorch.brain_extraction( t1, "t1" )
             t1 = ants.rank_intensity( t1 * lomask, get_mask=True )
         else:
-            print("Not both")
             t1 = ants.iMath( x, "Normalize" )
-            ants.image_write(t1, "~/Desktop/test_t1_0.nii.gz")    
             t1 = ants.rank_intensity( t1, get_mask=True )
-            ants.image_write(t1, "~/Desktop/test_t1_1.nii.gz")    
             
-        ants.image_write(t1, "~/Desktop/test_t1_2.nii.gz")    
         ants.plot( t1, axis=2, nslices=21, ncol=7, filename=pngfnb, crop=True )
-        print("option = " + option) 
-        print("file = " + pngfnb)
-        raise ValueError("HERE")
 
         templateb = ants.image_read( get_data( "S_template3_brain", target_extension='.nii.gz' ) )
         templatesmall = ants.resample_image( templateb, (2,2,2), use_voxels=False )
@@ -1029,7 +1021,9 @@ def inspect_raw_t1( x, output_prefix, option='both' ):
         
         grade0 = resnet_grader( t1 )['gradeNum'].iloc[0]
         msk=ants.threshold_image(t1,0.01,1.0)
-        t1tx=ants.n4_bias_field_correction( t1, mask=msk )
+
+        t1x = ants.iMath( t1, "Normalize" ) * 99 + 1
+        t1tx=ants.n4_bias_field_correction( t1x, mask=msk )
         t1tx=ants.iMath(t1tx,'TruncateIntensity',0.001,0.98)
         grade1 = resnet_grader( t1tx )['gradeNum'].iloc[0]
         
