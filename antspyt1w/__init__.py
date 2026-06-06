@@ -5,6 +5,10 @@ except:
     pass
 
 from .get_data import get_data
+from .get_data import get_global_version
+from .get_data import set_global_version
+from .get_data import get_backend
+from .get_data import set_backend
 from .get_data import map_segmentation_to_dataframe
 from .get_data import random_basis_projection
 from .get_data import hierarchical
@@ -13,11 +17,9 @@ from .get_data import deep_tissue_segmentation
 from .get_data import deep_mtl
 from .get_data import label_hemispheres
 from .get_data import brain_extraction
-from .get_data import deep_hippo
 from .get_data import icv
 from .get_data import hemi_reg
 from .get_data import region_reg
-from .get_data import t1_hypointensity
 from .get_data import zoom_syn
 from .get_data import map_intensity_to_dataframe
 from .get_data import trim_segmentation_by_distance

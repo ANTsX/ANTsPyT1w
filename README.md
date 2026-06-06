@@ -68,9 +68,23 @@ os.environ["TF_NUM_INTEROP_THREADS"] = "8"
 os.environ["TF_NUM_INTRAOP_THREADS"] = "8"
 os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "8"
 
+os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"]="1"
+
 import antspyt1w
-import antspynet
 import ants
+
+
+which_pipeline = "original"
+
+if which_pipeline == "original":
+     antspyt1w.set_global_version(0)
+elif which_pipeline == "antspynet":
+     antspyt1w.set_global_version(1)
+     antspyt1w.set_backend('antspynet')
+elif which_pipeline == "antstorch":
+     antspyt1w.set_global_version(1)
+     antspyt1w.set_backend('antstorch', antstorch_device='mps')
 
 ##### get example data + reference templates
 # NOTE:  PPMI-3803-20120814-MRI_T1-I340756 is a good example of our naming style
